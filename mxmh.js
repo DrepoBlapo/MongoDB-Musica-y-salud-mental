@@ -1,0 +1,415 @@
+//Ver el dataset
+use "mxmh";
+
+db.mxmh_survey_results.find();
+
+/* PREPARACIÓN DE DATOS */
+// Cambio de nombre de las variables
+
+db.mxmh_survey_results.updateMany({},
+  {$rename: {
+      "Timestamp": "timestamp",
+      "Age": "age",
+      "Primary streaming service": "primary_streaming_service",
+      "Hours per day" : "hours_per_day",
+      "While working": "while_working",
+      "Instrumentalist" : "instrumentalist",
+      "Composer": "composer",
+      "Fav genre": "fav_genre",
+      "Frequency ": "frequency"
+      "Exploratory": "exploratory",
+      "Foreign languages" : "foreign_languages",
+      "Anxiety" : "anxiety",
+      "Depression" : "depression",
+      "Insomnia": "insomnia",
+      "Music effects" : "music_effects",
+      "BPM":"bpm",
+      "OCD":"ocd"
+    }
+  }
+);
+
+db.mxmh_survey_results.find();
+
+
+// Elimino el campo Permissions por ser redundante.
+
+db.mxmh_survey_results.updateMany({}, { $unset: { "Permissions": "" } })
+db.mxmh_survey_results.find();
+
+
+//Comprobación de filas con campos vacíos:
+
+db.mxmh_survey_results.countDocuments(
+    {$or: [{"timestamp": null},
+      {"age": null},
+      {"primary_streaming_service": null},
+      {"hours_per_day": null},
+      {"while_working": null},
+      {"instrumentalist": null},
+      {"composer": null},
+      {"fav_genre": null},
+      {"frequency": null},
+      {"exploratory": null},
+      {"foreign_languages": null},
+      {"anxiety": null},
+      {"depression": null},
+      {"insomnia": null},
+      {"music_effects": null},
+      {"bpm": null},
+      {"ocd": null}
+    ]
+});
+
+
+// Tratamiento de "frequency" (array con 16 campos embebidos)
+
+db.mxmh_survey_results.aggregate([
+  { 
+    $project: { 
+      age: 1, 
+      anxiety: 1, 
+      bpm: 1, 
+      composer: 1, 
+      depression: 1, 
+      exploratory: 1, 
+      fav_genre: 1, 
+      foreign_languages: 1, 
+      hours_per_day: 1, 
+      insomnia: 1, 
+      instrumentalist: 1, 
+      ocd: 1, 
+      primary_streaming_service: 1, 
+      timestamp: 1, 
+      while_working: 1, 
+      music_effects: 1,
+      frequency: { $objectToArray: "$frequency" } // Convierte "frequency" en un array al que sí podemos hacer unwind
+    } 
+  },
+  { $unwind: "$frequency" },
+  { 
+    $project: { 
+      _id: 0, 
+      genre: "$frequency.k",                       // le decímos a qué nueva variable pertenece la clave y a cual el valor
+      listening_frequency: "$frequency.v",
+      age: 1, 
+      anxiety: 1, 
+      bpm: 1, 
+      composer: 1, 
+      depression: 1, 
+      exploratory: 1, 
+      fav_genre: 1, 
+      foreign_languages: 1, 
+      hours_per_day: 1, 
+      insomnia: 1, 
+      instrumentalist: 1, 
+      ocd: 1, 
+      primary_streaming_service: 1, 
+      timestamp: 1, 
+      while_working: 1, 
+      music_effects: 1
+    } 
+  },
+  { $out: "freq_mxmh" } // crea la colección freq_mxmh, que usaremos para consultar sobre frequencias más adelante
+]);
+
+db.freq_mxmh.find();
+
+/* CONSULTAS */
+
+// Media de edad
+
+db.mxmh_survey_results.aggregate([
+    { $group : {
+        _id: 0,
+        edad_promedio : { $avg : "$age" },
+        edad_max: { $max: "$age" }, 
+        edad_min: { $min: "$age" }
+    }
+}
+]);
+
+
+// Insertar nueva entrada
+
+db.mxmh_survey_results.insertOne({
+  "age": 24,
+  "anxiety": 4,
+  "bpm": 120,
+  "composer": "Yes",
+  "depression": 3,
+  "exploratory": "Yes",
+  "fav_genre": "Rock",
+  "foreign_languages": "Yes",
+  "frequency": {
+    "Classical": "Rarely",
+    "Country": "Never",
+    "EDM": "Very frequently",
+    "Folk": "Never",
+    "Gospel": "Never",
+    "Hip hop": "Sometimes",
+    "Jazz": "Never",
+    "K pop": "Never",
+    "Latin": "Very frequently",
+    "Lofi": "Rarely",
+    "Metal": "Sometimes",
+    "Pop": "Very frequently",
+    "R&B": "Sometimes",
+    "Rap": "Very frequently",
+    "Rock": "Never",
+    "Video game music": "Sometimes"
+  },
+  "hours_per_day": 3,
+  "insomnia": 7,
+  "instrumentalist": "Yes",
+  "ocd": 6,
+  "primary_streaming_service": "Spotify",
+  "timestamp": new Date(),
+  "while_working": "Yes",
+  "music_effects": "Improve"
+});
+
+
+// Géneros favoritos de aquellos compositores que NO son instrumentistas
+
+db.mxmh_survey_results.aggregate([
+    {$match: {
+            "composer" : "Yes",
+            "instrumentalist" : "No"
+        }
+    },
+    {$group: {
+        _id: "$fav_genre",
+        count: {$sum: 1}
+        }
+    },
+    {
+        $sort: { count: -1}
+    }        
+]);
+
+
+// Géneros favoritos de aquellos compositores que SÍ son instrumentistas
+
+db.mxmh_survey_results.aggregate([
+    {$match: {
+            "composer" : "Yes",
+            "instrumentalist" : "Yes"
+        }
+    },
+    {$group: {
+        _id: "$fav_genre",
+        count: {$sum: 1}
+        }
+    },
+    {
+        $sort: { count: -1}
+    }        
+]);
+
+
+// Matriz de conteo que muestra la relación entre "exploratory" y "music_effects"
+
+db.mxmh_survey_results.aggregate([
+  {$match: {
+      "music_effects": { $ne: null } 
+    }
+  },
+  {$group: {
+      _id: { 
+        exploratory: "$exploratory", 
+        music_effects: "$music_effects" 
+      },
+      count: { $sum: 1 } 
+    }
+  },
+  {$sort: { "_id.exploratory": 1, "_id.music_effects": 1 } 
+  }
+]);
+
+
+// Relación entre while_working y los distintos trastornos mentales.
+
+db.mxmh_survey_results.aggregate([
+  {$match: {
+      while_working: { $in: ["Yes", "No"] },
+      ocd: { $ne: null }, 
+      depression: { $ne: null }, 
+      insomnia: { $ne: null }, 
+      anxiety: { $ne: null }
+    }
+  },
+  {$group: {
+      _id: "$while_working",                        
+      avg_values: {                                   // Cálculo de las medias
+        $push: {
+          ocd: { $avg: "$ocd" },
+          depression: { $avg: "$depression" },
+          insomnia: { $avg: "$insomnia" },
+          anxiety: { $avg: "$anxiety" }
+        }
+      }
+    }
+  },
+  {$project: {
+      _id: 0,
+      while_working: "$_id",                                  
+      avg_ocd: { $avg: "$avg_values.ocd" },                      // Proyección de las medias
+      avg_depression: { $avg: "$avg_values.depression" },
+      avg_insomnia: { $avg: "$avg_values.insomnia" },
+      avg_anxiety: { $avg: "$avg_values.anxiety" }
+    }
+  }
+]);
+
+
+// Media de horas de escucha diaria agrupados por decenios
+
+db.mxmh_survey_results.aggregate([
+  {$match: {
+      age: { $ne: null }, 
+      hours_per_day: { $ne: null }
+    }
+  },
+  {$bucket: {
+      groupBy: "$age", 
+      boundaries: [10, 20, 30, 40, 50, 60, 70, 80],   // No hay muestras con menos de 10 años (el valor 0 no hace falta)
+      default: "Other", 
+      output: {
+        avg_hours_per_day: { $avg: "$hours_per_day" },
+        count: { $sum: 1 } 
+      }
+    }
+  },
+  {$sort: { _id: 1 } 
+  }
+]);
+
+
+// Géneros que menos escuchan las personas con depresión.
+
+db.freq_mxmh.aggregate([
+  {$match: {
+      depression: { $gte: 5 },
+      listening_frequency: { $eq : "Never"}
+    }
+  },
+  {$group: {
+      _id: "$genre",
+      count: { $sum: 1 }
+    }
+  },
+  {$sort: { count: -1 }
+  }
+]);
+
+
+// Mostrar los 5 géneros músicales que más han sido escuchados de forma "muy frecuente".
+
+db.freq_mxmh.aggregate([
+    {$match: {
+        listening_frequency: { $eq: "Very frequently" },
+        genre: { $ne : null }
+        }
+    },
+    {$group: {
+        _id: "$genre",
+        count: { $sum : 1 }
+        }
+    },
+    {$sort: { count : -1 }
+    },
+    {$limit: 5
+    }
+]);
+
+
+// La diferencia de veces que cada género aparece como muy escuchado y como favorito 
+
+db.freq_mxmh.aggregate([
+  {$group: {
+      _id: "$genre", 
+      fav_genre_count: { $sum: { $cond: [{ $eq: ["$genre", "$fav_genre"] }, 1, 0] } }, // Aplicar condicionales surge del hecho de no poder asumir que los géneros favoritos estarán contenidos entre los más escuchados de cada persona (filtrar con $match no sirve, esta es la forma de hacer un count de ambas variables) 
+      very_frequent_count: { $sum: { $cond: [{ $eq: ["$listening_frequency", "Very frequently"] }, 1, 0] } } 
+    }
+  },
+  {$project: {
+      _id: 1,
+      fav_genre_count: 1,
+      very_frequent_count: 1,
+      difference: { $subtract: ["$very_frequent_count","$fav_genre_count"] } // Diferencia entre apariciones como muy escuchado y género favorito
+    }
+  },
+  { $sort: { difference: -1 } } 
+]);
+
+
+
+// Horas de escucha diarias y bpm promedio agrupando por servicio de streaming más escuchado y una consulta agregada en la que, para cada individuo, se vea el género favorito, los bpm de su genero favorito, y media de sus trastornos mentales personales.
+
+db.mxmh_survey_results.aggregate([
+  {$facet: {
+      "streaming_service_hours_bpm": [  // Horas de escucha diarias y BPM promedio por servicio de streaming
+        { $match: {
+            primary_streaming_service: { $ne: null },
+            hours_per_day: { $ne: null },
+            bpm: { $ne: null }
+          }
+        },
+        {$group: {
+            _id: "$primary_streaming_service",
+            average_hours_per_day: { $avg: "$hours_per_day" },
+            average_bpm: { $avg: "$bpm" }
+          }
+        },
+        {$sort: { average_hours_per_day: -1 } } 
+      ],
+      "individuo_estadisticas": [  // Género favorito de cada individuo, BPM y media de los trastornos mentales
+        {$match: {
+            fav_genre: { $ne: null },
+            bpm: { $ne: null },
+            anxiety: { $ne: null },
+            depression: { $ne: null },
+            insomnia: { $ne: null },
+            ocd: { $ne: null }
+          }
+        },
+        {$project: {
+            _id: 1,
+            fav_genre: 1,
+            bpm: 1,
+            avg_trastornos_mentales_int: { 
+              $toInt: {                        // toInt() evita la aparición de resultados en formato Double()
+                $avg: [
+                  "$anxiety",
+                  "$depression",
+                  "$insomnia",
+                  "$ocd"
+                ]
+            }
+          }
+        }
+      ]
+    }
+  }
+]);
+
+
+   
+    
+    
+    
+    
+  
+
+
+
+
+
+
+
+
+
+
+
+
