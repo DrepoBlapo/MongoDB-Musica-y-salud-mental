@@ -1,7 +1,9 @@
 # MongoDB-Musica-y-salud-mental
+_ES_:
 Análisis de una base de datos de musicoterapia a través de la herramienta NoSQL MongoDB.
 
-_Analysis of a music therapy database using the NoSQL tool MongoDB._
+_EN_:
+Analysis of a music therapy database using the NoSQL tool MongoDB.
 
 
 ## Descipción de archivos
